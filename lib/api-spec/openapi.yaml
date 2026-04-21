@@ -1,22 +1,22 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Nyaya AI Legal Assistant API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: cases
+  - name: analysis
+  - name: dashboard
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +24,425 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /cases:
+    get:
+      operationId: listCases
+      tags: [cases]
+      summary: List all cases
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Case"
+    post:
+      operationId: createCase
+      tags: [cases]
+      summary: Create a new case from an incident description
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewCaseInput"
+      responses:
+        "200":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Case"
+
+  /cases/{id}:
+    get:
+      operationId: getCase
+      tags: [cases]
+      summary: Get a single case with full analysis
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Case"
+    delete:
+      operationId: deleteCase
+      tags: [cases]
+      summary: Delete a case
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required: [success]
+
+  /cases/{id}/fir:
+    post:
+      operationId: generateFir
+      tags: [cases]
+      summary: Generate (or regenerate) the FIR draft for a case
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Case"
+
+  /cases/{id}/evidence:
+    patch:
+      operationId: updateEvidenceItem
+      tags: [cases]
+      summary: Toggle an evidence item's collected status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvidenceUpdate"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Case"
+
+  /cases/{id}/translate:
+    post:
+      operationId: translateCase
+      tags: [cases]
+      summary: Translate the case explanation into a target language
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranslateRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranslationResponse"
+
+  /analysis/transcribe:
+    post:
+      operationId: transcribeAudio
+      tags: [analysis]
+      summary: Transcribe a voice incident description to text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranscribeRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionResponse"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get aggregate dashboard stats
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/recent:
+    get:
+      operationId: getRecentActivity
+      tags: [dashboard]
+      summary: Recent case activity feed
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
+  /dashboard/top-laws:
+    get:
+      operationId: getTopLaws
+      tags: [dashboard]
+      summary: Most-referenced IPC sections across all cases
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LawFrequency"
+
 components:
   schemas:
     HealthStatus:
       type: object
       properties:
+        status: { type: string }
+      required: [status]
+
+    IpcSection:
+      type: object
+      properties:
+        section: { type: string, description: "e.g. 'IPC 420'" }
+        title: { type: string }
+        description: { type: string }
+        confidence: { type: number, description: "0..1" }
+        triggered_by:
+          type: array
+          items: { type: string }
+          description: "Keywords or phrases from the incident that triggered this section"
+      required: [section, title, description, confidence, triggered_by]
+
+    ConstitutionArticle:
+      type: object
+      properties:
+        article: { type: string, description: "e.g. 'Article 21'" }
+        title: { type: string }
+        description: { type: string }
+        confidence: { type: number }
+      required: [article, title, description, confidence]
+
+    EvidenceItem:
+      type: object
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          enum: [document, witness, digital, physical, medical, other]
+        description: { type: string }
+        priority:
+          type: string
+          enum: [critical, important, optional]
+        collected: { type: boolean }
+      required: [id, type, description, priority, collected]
+
+    PrecedentCase:
+      type: object
+      properties:
+        title: { type: string }
+        court: { type: string }
+        year: { type: integer }
+        summary: { type: string }
+        outcome: { type: string }
+        similarity: { type: number }
+      required: [title, court, year, summary, outcome, similarity]
+
+    RightsViolation:
+      type: object
+      properties:
+        right: { type: string, description: "e.g. 'Right to Life (Article 21)'" }
+        description: { type: string }
+        complaint_channel: { type: string }
+      required: [right, description, complaint_channel]
+
+    StrengthScore:
+      type: object
+      properties:
+        overall: { type: integer, description: "0..100" }
+        evidence: { type: integer }
+        legal_coverage: { type: integer }
+        precedent: { type: integer }
+        verdict: { type: string, description: "e.g. 'Strong', 'Moderate', 'Weak'" }
+        notes: { type: string }
+      required: [overall, evidence, legal_coverage, precedent, verdict, notes]
+
+    FirDraft:
+      type: object
+      properties:
+        complainant_name: { type: string }
+        complainant_address: { type: string }
+        incident_date: { type: string }
+        incident_location: { type: string }
+        incident_summary: { type: string }
+        sections_invoked:
+          type: array
+          items: { type: string }
+        timeline:
+          type: array
+          items:
+            type: object
+            properties:
+              when: { type: string }
+              event: { type: string }
+            required: [when, event]
+        accused_details: { type: string }
+        prayer: { type: string }
+      required: [complainant_name, complainant_address, incident_date, incident_location, incident_summary, sections_invoked, timeline, accused_details, prayer]
+
+    Case:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        complainant_name: { type: string }
+        incident_text: { type: string }
+        input_language: { type: string }
+        category: { type: string, description: "e.g. 'Cyber Fraud', 'Assault', 'Domestic Violence'" }
         status:
           type: string
-      required:
-        - status
+          enum: [draft, analyzed, fir_generated, filed]
+        summary: { type: string }
+        explanation: { type: string, description: "Plain-language explanation of the law that applies" }
+        ipc_sections:
+          type: array
+          items: { $ref: "#/components/schemas/IpcSection" }
+        constitution_articles:
+          type: array
+          items: { $ref: "#/components/schemas/ConstitutionArticle" }
+        evidence:
+          type: array
+          items: { $ref: "#/components/schemas/EvidenceItem" }
+        precedents:
+          type: array
+          items: { $ref: "#/components/schemas/PrecedentCase" }
+        rights_violations:
+          type: array
+          items: { $ref: "#/components/schemas/RightsViolation" }
+        strength: { $ref: "#/components/schemas/StrengthScore" }
+        fir_draft:
+          oneOf:
+            - $ref: "#/components/schemas/FirDraft"
+            - type: "null"
+        reasoning: { type: string, description: "XAI reasoning trace" }
+        created_at: { type: string }
+        updated_at: { type: string }
+      required: [id, title, complainant_name, incident_text, input_language, category, status, summary, explanation, ipc_sections, constitution_articles, evidence, precedents, rights_violations, strength, reasoning, created_at, updated_at]
 
+    NewCaseInput:
+      type: object
+      properties:
+        complainant_name: { type: string }
+        incident_text: { type: string }
+        input_language:
+          type: string
+          enum: [en, hi, te]
+      required: [complainant_name, incident_text, input_language]
+
+    EvidenceUpdate:
+      type: object
+      properties:
+        evidence_id: { type: string }
+        collected: { type: boolean }
+      required: [evidence_id, collected]
+
+    TranslateRequest:
+      type: object
+      properties:
+        target_language:
+          type: string
+          enum: [en, hi, te]
+      required: [target_language]
+
+    TranslationResponse:
+      type: object
+      properties:
+        target_language: { type: string }
+        summary: { type: string }
+        explanation: { type: string }
+      required: [target_language, summary, explanation]
+
+    TranscribeRequest:
+      type: object
+      properties:
+        audio_base64: { type: string }
+        mime_type: { type: string }
+        language: { type: string }
+      required: [audio_base64, mime_type]
+
+    TranscriptionResponse:
+      type: object
+      properties:
+        text: { type: string }
+        detected_language: { type: string }
+      required: [text, detected_language]
+
+    DashboardSummary:
+      type: object
+      properties:
+        total_cases: { type: integer }
+        firs_generated: { type: integer }
+        evidence_collected: { type: integer }
+        evidence_pending: { type: integer }
+        avg_strength: { type: integer }
+        by_category:
+          type: array
+          items:
+            type: object
+            properties:
+              category: { type: string }
+              count: { type: integer }
+            required: [category, count]
+      required: [total_cases, firs_generated, evidence_collected, evidence_pending, avg_strength, by_category]
+
+    ActivityItem:
+      type: object
+      properties:
+        case_id: { type: string }
+        case_title: { type: string }
+        action: { type: string }
+        at: { type: string }
+      required: [case_id, case_title, action, at]
+
+    LawFrequency:
+      type: object
+      properties:
+        section: { type: string }
+        title: { type: string }
+        count: { type: integer }
+      required: [section, title, count]
