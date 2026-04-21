@@ -15,7 +15,7 @@ AI-powered legal assistant for India. Citizens describe an incident (text or voi
 - Frontend: `artifacts/nyaya-ai` — React + Vite + wouter + TanStack Query + Tailwind + shadcn/ui (path-based routing at `/`)
 - Backend: `artifacts/api-server` — Express, mounted at `/api`
 - DB: Replit Postgres via `@workspace/db` (drizzle-orm). Schema in `lib/db/src/schema/cases.ts`
-- AI: Replit OpenAI integration via `@workspace/integrations-openai-ai-server` (model `gpt-5.2`, transcription `gpt-4o-mini-transcribe`)
+- AI: Replit Gemini integration (free tier) via `@workspace/integrations-gemini-ai` (model `gemini-2.5-flash` for analysis, FIR, translation, and audio transcription)
 - API contract: `lib/api-spec/openapi.yaml` → orval codegen → `@workspace/api-client-react` + `@workspace/api-zod`
 
 ## Key files

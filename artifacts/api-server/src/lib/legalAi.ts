@@ -1,4 +1,6 @@
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { ai } from "@workspace/integrations-gemini-ai";
+
+const MODEL = "gemini-2.5-flash";
 
 export interface LegalAnalysisResult {
   title: string;
@@ -72,7 +74,18 @@ const ANALYSIS_SCHEMA_INSTRUCTIONS = `Return JSON with EXACTLY these keys:
   "strength": {"overall":68,"evidence":60,"legal_coverage":85,"precedent":60,"verdict":"Moderate","notes":"Solid legal coverage; strengthen by collecting bank statements and witness statements."}
 }
 
-Aim for 2-5 IPC sections, 1-3 constitution articles, 4-7 evidence items, 2-3 precedents, 0-2 rights violations (only include if a state actor likely violated rights).`;
+Aim for 2-5 IPC sections, 1-3 constitution articles, 4-7 evidence items, 2-3 precedents, 0-2 rights violations (only include if a state actor likely violated rights).
+
+Reply with ONLY the JSON object, no markdown fences, no commentary.`;
+
+function extractJson(text: string): string {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) return fenced[1].trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) return text.slice(start, end + 1);
+  return text.trim();
+}
 
 export async function analyzeIncident(
   incidentText: string,
@@ -88,17 +101,17 @@ ${incidentText}
 
 ${ANALYSIS_SCHEMA_INSTRUCTIONS}`;
 
-  const resp = await openai.chat.completions.create({
-    model: "gpt-5.2",
-    max_completion_tokens: 8192,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: userPrompt },
-    ],
+  const resp = await ai.models.generateContent({
+    model: MODEL,
+    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+    config: {
+      systemInstruction: SYSTEM_PROMPT,
+      responseMimeType: "application/json",
+      maxOutputTokens: 8192,
+    },
   });
-  const content = resp.choices[0]?.message?.content ?? "{}";
-  return JSON.parse(content) as LegalAnalysisResult;
+  const text = resp.text ?? "{}";
+  return JSON.parse(extractJson(text)) as LegalAnalysisResult;
 }
 
 export interface FirDraftResult {
@@ -140,18 +153,20 @@ Return JSON with EXACTLY these keys:
   "timeline": [{"when":"...","event":"..."}],
   "accused_details": "any identifying details of accused mentioned in the incident, or '[Unknown - to be investigated]'",
   "prayer": "formal prayer (1-2 sentences) requesting the SHO to register the FIR and take legal action"
-}`;
+}
 
-  const resp = await openai.chat.completions.create({
-    model: "gpt-5.2",
-    max_completion_tokens: 4096,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: prompt },
-    ],
+Reply with ONLY the JSON object, no markdown fences, no commentary.`;
+
+  const resp = await ai.models.generateContent({
+    model: MODEL,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    config: {
+      systemInstruction: SYSTEM_PROMPT,
+      responseMimeType: "application/json",
+      maxOutputTokens: 8192,
+    },
   });
-  return JSON.parse(resp.choices[0]?.message?.content ?? "{}") as FirDraftResult;
+  return JSON.parse(extractJson(resp.text ?? "{}")) as FirDraftResult;
 }
 
 export async function translateCaseText(args: {
@@ -164,16 +179,24 @@ export async function translateCaseText(args: {
     args.targetLanguage === "te" ? "Telugu (Telugu script)" :
     "English";
 
-  const resp = await openai.chat.completions.create({
-    model: "gpt-5.2",
-    max_completion_tokens: 4096,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: `You translate Indian legal text into ${langName}. Keep IPC section numbers and Constitution article numbers untranslated. Reply as JSON with exactly { "summary": "...", "explanation": "..." }.` },
-      { role: "user", content: `Translate to ${langName}:\n\nSUMMARY:\n${args.summary}\n\nEXPLANATION:\n${args.explanation}` },
+  const resp = await ai.models.generateContent({
+    model: MODEL,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: `Translate the following Indian legal text into ${langName}. Keep IPC section numbers and Constitution article numbers untranslated. Reply as JSON with exactly { "summary": "...", "explanation": "..." }. Reply with ONLY the JSON object.\n\nSUMMARY:\n${args.summary}\n\nEXPLANATION:\n${args.explanation}`,
+          },
+        ],
+      },
     ],
+    config: {
+      responseMimeType: "application/json",
+      maxOutputTokens: 8192,
+    },
   });
-  return JSON.parse(resp.choices[0]?.message?.content ?? "{}");
+  return JSON.parse(extractJson(resp.text ?? "{}"));
 }
 
 export async function transcribeAudioBuffer(args: {
@@ -181,22 +204,35 @@ export async function transcribeAudioBuffer(args: {
   mimeType: string;
   language?: string;
 }): Promise<{ text: string; detected_language: string }> {
-  const ext =
-    args.mimeType.includes("webm") ? "webm" :
-    args.mimeType.includes("mp4") ? "mp4" :
-    args.mimeType.includes("wav") ? "wav" :
-    args.mimeType.includes("mpeg") || args.mimeType.includes("mp3") ? "mp3" :
-    "webm";
+  const langHint =
+    args.language === "hi" ? "The speaker is likely speaking Hindi." :
+    args.language === "te" ? "The speaker is likely speaking Telugu." :
+    args.language === "en" ? "The speaker is likely speaking English." :
+    "";
 
-  const file = new File([new Uint8Array(args.buffer)], `audio.${ext}`, { type: args.mimeType });
-  const resp = await openai.audio.transcriptions.create({
-    model: "gpt-4o-mini-transcribe",
-    file,
-    response_format: "json",
-    ...(args.language ? { language: args.language } : {}),
+  const resp = await ai.models.generateContent({
+    model: MODEL,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: `Transcribe the following audio verbatim into the same language the speaker uses. ${langHint} Return ONLY the transcribed text, no commentary, no quotes, no labels.`,
+          },
+          {
+            inlineData: {
+              mimeType: args.mimeType,
+              data: args.buffer.toString("base64"),
+            },
+          },
+        ],
+      },
+    ],
+    config: { maxOutputTokens: 8192 },
   });
+
   return {
-    text: resp.text ?? "",
+    text: (resp.text ?? "").trim(),
     detected_language: args.language ?? "auto",
   };
 }
