@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { Case } from "@workspace/api-client-react/src/generated/api.schemas";
+import { Case } from "@workspace/api-client-react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ChevronRight, FileText, Scale } from "lucide-react";

@@ -15,7 +15,8 @@ import {
   useGetCase, 
   useDeleteCase, 
   useGenerateFir, 
-  useTranslateCase 
+  useTranslateCase,
+  getGetCaseQueryKey,
 } from "@workspace/api-client-react";
 import { 
   Scale, BookOpen, AlertOctagon, ShieldAlert, FileText, 
@@ -31,7 +32,7 @@ export default function CaseDetail() {
   const [targetLang, setTargetLang] = useState<"en" | "hi" | "te">("en");
   
   const { data: caseData, isLoading, isError } = useGetCase(id, { 
-    query: { enabled: !!id } 
+    query: { queryKey: getGetCaseQueryKey(id), enabled: !!id } 
   });
   
   const deleteMutation = useDeleteCase();

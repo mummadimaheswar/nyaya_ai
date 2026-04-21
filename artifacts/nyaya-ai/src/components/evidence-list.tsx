@@ -1,8 +1,6 @@
 import { useState } from "react";
-import { EvidenceItem } from "@workspace/api-client-react/src/generated/api.schemas";
-import { useUpdateEvidenceItem } from "@workspace/api-client-react";
+import { EvidenceItem, Case, useUpdateEvidenceItem, getGetCaseQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getGetCaseQueryKey } from "@workspace/api-client-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { FileText, Camera, Users, Package, HeartPulse, HelpCircle } from "lucide-react";
@@ -31,39 +29,45 @@ export function EvidenceList({
   caseId: string;
 }) {
   const queryClient = useQueryClient();
-  const updateEvidence = useUpdateEvidenceItem();
-  
-  // Optimistic UI updates
-  const handleToggle = (id: string, collected: boolean) => {
-    updateEvidence.mutate(
-      { id: caseId, data: { evidence_id: id, collected } },
-      {
-        onMutate: async () => {
-          // Cancel any outgoing refetches
-          await queryClient.cancelQueries({ queryKey: getGetCaseQueryKey(caseId) });
-          // Snapshot the previous value
-          const previousCase = queryClient.getQueryData(getGetCaseQueryKey(caseId));
-          // Optimistically update to the new value
-          queryClient.setQueryData(getGetCaseQueryKey(caseId), (old: any) => {
-            if (!old) return old;
-            return {
-              ...old,
-              evidence: old.evidence.map((item: EvidenceItem) => 
-                item.id === id ? { ...item, collected } : item
-              )
-            };
-          });
-          return { previousCase };
-        },
-        onError: (err, newTodo, context) => {
-          queryClient.setQueryData(getGetCaseQueryKey(caseId), context?.previousCase);
-          toast.error("Failed to update evidence status");
-        },
-        onSettled: () => {
-          queryClient.invalidateQueries({ queryKey: getGetCaseQueryKey(caseId) });
+  const updateEvidence = useUpdateEvidenceItem<
+    Error,
+    { previousCase: Case | undefined }
+  >({
+    mutation: {
+      onMutate: async (variables) => {
+        const queryKey = getGetCaseQueryKey(caseId);
+        // Cancel any outgoing refetches
+        await queryClient.cancelQueries({ queryKey });
+        // Snapshot the previous value
+        const previousCase = queryClient.getQueryData<Case>(queryKey);
+        // Optimistically update to the new value
+        queryClient.setQueryData<Case>(queryKey, (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            evidence: old.evidence?.map((item) =>
+              item.id === variables.data.evidence_id
+                ? { ...item, collected: variables.data.collected }
+                : item
+            ),
+          };
+        });
+        return { previousCase };
+      },
+      onError: (_err, _variables, context) => {
+        if (context?.previousCase) {
+          queryClient.setQueryData(getGetCaseQueryKey(caseId), context.previousCase);
         }
-      }
-    );
+        toast.error("Failed to update evidence status");
+      },
+      onSettled: () => {
+        queryClient.invalidateQueries({ queryKey: getGetCaseQueryKey(caseId) });
+      },
+    },
+  });
+
+  const handleToggle = (id: string, collected: boolean) => {
+    updateEvidence.mutate({ id: caseId, data: { evidence_id: id, collected } });
   };
 
   const critical = items.filter(i => i.priority === "critical");

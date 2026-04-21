@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileText, ShieldAlert, Scale, Search } from "lucide-react";
-import { DashboardSummary } from "@workspace/api-client-react/src/generated/api.schemas";
+import { DashboardSummary } from "@workspace/api-client-react";
 
 export function DashboardStats({ data }: { data: DashboardSummary }) {
   return (
